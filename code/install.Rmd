@@ -1,0 +1,29 @@
+---
+title: "Installing R"
+---
+
+# Getting started in R
+
+To download R, go to:
+  
+  https://cloud.r-project.org
+
+and then click on the link for either Mac, Windows or Linux depending on your computer.
+
+To install RStudio, go to:
+  
+  http://www.rstudio.com/download
+
+RStudio is an integrated development environment (or IDE) for R programming.
+It makes writing and running R code more fun.
+
+If all of that is completely mystifying, have a look at this section from R for
+
+Data Science:
+  r4ds.had.co.nz/introduction.html#prerequisites
+
+If you are 100% brand new to R, getting R and RStudio installed on your
+computer can be the hardest and most frustrating part. It's not intuitive and
+it has nothing to do with the work you want to do. I have been there and I
+have smashed my head in frustration many times. Stick with it and use the
+online resources for guidance. Once it's done, it's done. 

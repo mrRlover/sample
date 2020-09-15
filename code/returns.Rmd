@@ -1,0 +1,279 @@
+---
+title: "From Prices to Returns"
+---
+
+```{r run_previous, echo = FALSE, message=FALSE, results='hide', warning=FALSE}
+pkgs <- c("tidyverse", "lubridate", "readxl", "highcharter", "knitr", "tidyquant", "timetk", "tibbletime", "quantmod", "PerformanceAnalytics", "scales")
+
+sapply(pkgs, function(pkg) if(!require(pkg, character.only = TRUE)) install.packages(pkg, repos = "https://cloud.r-project.org/"))
+
+sapply(pkgs, library, character.only = TRUE)
+
+filenames <- list.files(pattern = "*.csv")
+
+prices <- filenames %>%
+  map(~read_csv(.,
+                col_types =
+                  cols(Date =
+                         col_date(format = "%Y/%m/%d")),
+                na = c("", "#N/A", "NA"))) %>%
+  bind_cols() %>%
+  rename(date = `Date...1`) %>%
+  select(date, everything(),-contains("...")) %>%
+  tk_xts(date_var = date)
+
+symbols <- substr(filenames, 1, 3)
+```
+
+## Returns
+
+Next we will convert daily prices to monthly log returns.
+
+I mentioned in the introduction that we would be working with three core packages - xts, tidyverse and tidyquant - the prices object is an xts, so we will use that here.
+
+The first observation in our prices object is January 04, 2000 (the first trading day of that year) and we have daily prices. We want to convert to those daily prices to monthly log returns based on the last reading of each month.
+
+We will use `to.monthly(prices, indexAt = "last", OHLC = FALSE)` from the `quantmod` package. The argument indexAt = "lastof" tells the function whether we want to index to the first day of the month or the last day. If we wanted to use the first day, we would change it to indexAt = "firstof".
+
+```{r monthly_prices, results='hide', warning=FALSE}
+prices_monthly <- to.monthly(prices, indexAt = "lastof", OHLC = FALSE)
+head(prices_monthly)
+```
+
+
+
+```{r prices_monthly, echo=FALSE}
+priceTable <- data.frame(head(prices_monthly))
+# colnames(priceTable)[1] <- ""
+priceTable <- kable(priceTable, format = "html")
+priceTable <- gsub("<table>", "<table class = kable>", priceTable)
+priceTable
+remove(priceTable)
+```
+
+We have moved from an xts object of daily prices to an xts object of monthly prices. Note that we now have one reading per month, for the last day of each month.
+
+Now we call Return.calculate(prices_monthly, method = "log") to convert to returns and save as an object called asset_returns. Note this`will give us log returns by the method = "log" argument. We could have used method = "discrete" to get simple returns.
+
+```{r returns, results='hide'}
+asset_returns <- Return.calculate(prices_monthly, method = "log") %>% na.omit()
+head(asset_returns)
+```
+
+
+
+```{r returns_table, echo=FALSE}
+returnsTable <- data.frame(head(asset_returns))
+returnsTable <- kable(returnsTable, format = "html")
+returnsTable <- gsub("<table>", "<table class = kable>", returnsTable)
+returnsTable
+remove(returnsTable)
+```
+
+Do we notice anything of interest?
+
+First, look at the date in each object. asset_returns has a date index, not a column. That index does not have a name. It is accessed via `index(asset_returns)`.
+
+A tibble would have a column called “date”, accessed via the `$date` convention, e.g. `asset_returns_tbl$date`. That distinction is not important when we read with our eyes, but it is very important when we pass these objects to functions.
+
+Second, each of these objects is in “wide” format, which in this case means there is a column for each of our assets: ABG has a column, AGL has a column, GRT has a column, MRP has a column, NPN has a column.
+
+This is the format that xts likes and this format is easier for a human to read. However, the tidyverse calls for this data to be in long or tidy format where each variable has its own column. For asset returns to be tidy, we need a column called “date”, a column called “asset” and a column called “returns”.
+
+```{r long_returns, results='hide'}
+asset_returns_long <- asset_returns %>%
+  tk_tbl() %>%
+  gather(asset, returns, -index) %>% 
+  group_by(asset)
+
+rbind(head(asset_returns_long, 3), tail(asset_returns_long, 3))
+```
+
+
+
+```{r returns_long, echo=FALSE}
+returnsTable <- data.frame(head(asset_returns_long, 3), tail(asset_returns_long, 3))
+returnsTable <- kable(returnsTable, format = "html")
+returnsTable <- gsub("<table>", "<table class = kable>", returnsTable)
+returnsTable
+remove(returnsTable)
+```
+
+## Visualizing Asset Returns in the xts world
+
+It might seem odd that visualization is part of the data import and wrangling work flow and it does not have to be: we could jump straight into the process of converting these assets into a portfolio. However, it is a good practice to chart individual returns because once a portfolio is built, we are unlikely to  back track to visualizing on an individual basis. Yet, those individual returns are the building blocks and raw material of our portfolio and visualizing them is a great way to understand them deeply. It also presents an opportunity to look for outliers, or errors, or anything unusual to be corrected before we move too far along in our analysis.
+
+For the purposes of visualizing returns, we will work with two of our monthly
+log returns objects, asset_returns and asset_returns_long (the tidy,
+long-formatted tibble).
+
+We start with the highcharter package to visualize the xts formatted returns.
+highcharter is an R package but Highcharts is a JavaScript library. The R package is a hook into the JavaScript library. Highcharts is fantastic for visualizing time series and it comes with great built-in widgets for viewing different time frames, plus we get to use the power of JavaScript without leaving the world of R code.
+
+Not only are the visualizations nice, but highcharter “just works” with xts objects in the sense that it reads the index as dates without needing to be told. We pass in an xts object and let the package do the rest. 
+
+Let’s see how it works for charting our asset monthly returns. First, we set highchart(type = "stock") to get a nice line format that was purpose-built for stocks.
+
+Then we add each of our series to the highcharter code flow with hc_add_series(asset_returns[, symbols[1]], name = symbol[1]). Notice that we can use our original symbols object to
+reference the columns. This will allow the code to run should we change to different ticker symbols at the outset.
+
+```{r chart_returns}
+highchart(type = "stock") %>%
+  hc_title(text = "Monthly Log Returns") %>%
+  hc_add_series(asset_returns[, symbols[1]], name = symbols[1]) %>%
+  hc_add_series(asset_returns[, symbols[2]], name = symbols[2]) %>%
+  hc_add_series(asset_returns[, symbols[3]], name = symbols[3]) %>%
+  hc_add_series(asset_returns[, symbols[4]], name = symbols[4]) %>%
+  hc_add_series(asset_returns[, symbols[5]], name = symbols[5]) %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_navigator(enabled = FALSE) %>%
+  hc_scrollbar(enabled = FALSE) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_legend(enabled = TRUE)
+```
+
+Looks great! Let us head to the tidyverse and explore another visualization flow.
+
+## Visualizing Asset Returns in the tidyverse
+
+`ggplot2` is a very widely-used and flexible visualization package, and it is included with the tidyverse. We will use it to build a histogram and have our first look at how tidy data plays nicely with functions in the tidyverse.
+
+In the code chunk below, we start with our tidy object of returns,
+asset_returns_long, and then pipe to ggplot() with the %>% operator.
+Next, we call ggplot(aes(x = returns, fill = asset)) to indicate that
+returns will be on the x-axis and that the bars should be filled with a different
+color for each asset. If we were to stop here, ggplot() would build an empty
+chart and that is because we have told it that we want a chart with certain x-axis values, but we have not told it what kind of chart to build. In ggplot()
+parlance, we have not yet specified a geom.
+
+We use geom_histogram() to build a histogram and that means we do not
+specify a y-axis value, because the histogram will be based on counts of the
+returns.
+
+Because the data frame is tidy and grouped by the asset column (recall when
+it was built we called group_by(asset)), ggplot() knows to chart a separate
+histogram for each asset. ggplot() will automatically include a legend since
+we included fill = asset in the aes() call.
+
+```{r hist,dpi=576, warning=FALSE}
+asset_returns_long %>%
+  ggplot(aes(x = returns, fill = asset)) +
+  geom_histogram(alpha = 0.45, binwidth = .005) +
+  ggtitle("Monthly Returns Since 2000")+
+  theme_light()
+```
+
+The figure above shows different colors for each asset, but we did not have add each
+asset separately.
+
+facet_wrap(~asset) will break this into 5 charts based on the asset, as shown in the figure below.
+
+```{r hist_facet, dpi=576, warning=FALSE}
+asset_returns_long %>%
+  ggplot(aes(x = returns, fill = asset)) +
+  geom_histogram(alpha = 0.45, binwidth = .01) +
+  facet_wrap(~asset) +
+  ggtitle("Monthly Returns Since 2013") +
+  theme_light()+
+  theme_update(plot.title = element_text(hjust = 0.5))
+```
+
+Maybe we prefer a density line to visualize distributions. We can use
+geom_density(alpha = 1), where the alpha argument is selecting a line
+thickness. We also add a label to the x and y axis with the xlab and ylab
+functions.
+
+```{r density_plot,dpi=576, warnining = FALSE}
+asset_returns_long %>%
+  ggplot(aes(x = returns, colour = asset)) +
+  geom_density(alpha = 1) +
+  ggtitle("Monthly Returns Density Since 2013") +
+  xlab("monthly returns") +
+  ylab("distribution") +
+  theme_light()+
+  theme_update(plot.title = element_text(hjust = 0.5))
+```
+
+The figure above shows density charts by asset and we have now made histograms and
+density plots. Perhaps we would like to combine both of those into one chart.
+ggplot() works in aesthetic layers, which means we can chart a histogram
+in one layer, and then add a layer with a density chart. Figure 2.6 shows the
+results when we start with a density chart for each asset, then layer on a
+histogram, then facet_wrap() by asset.
+
+```{r density_facet, dpi = 576, warning=FALSE}
+asset_returns_long %>%
+  ggplot(aes(x = returns)) +
+  geom_density(aes(color = asset), alpha = 1) +
+  geom_histogram(aes(fill = asset), alpha = 0.45, binwidth = .01) +
+  guides(fill = FALSE) +
+  facet_wrap(~asset) +
+  ggtitle("Monthly Returns Since 2013") +
+  xlab("monthly returns") +
+  ylab("distribution") +
+  theme_light()+
+  theme_update(plot.title = element_text(hjust = 0.5))
+```
+
+The figure above is a good example of one chart, with histograms and line densities
+broken out for each of our assets. This would scale nicely if we had 50 assets
+and wanted to peek at more distributions of returns because ggplot() would
+recognize that each asset is a group. It would still be one call to ggplot()
+instead of 50.
+
+## Cumulative Returns
+
+This is the total return of a share or portfolio from the purchase date to evaluation date. Or put simply, cumulative returns show the amount you'd have if you had invested R1 at the start of the evaluation period. We can easily create a graph using the long format of the asset_returns by simply mutating the returns column.
+
+```{r mutate_returns}
+asset_cumulative <- asset_returns_long %>%
+  group_by(asset) %>%
+  mutate(returns = cumprod(1+returns))
+```
+
+Then we use ggplot2 to create a graph of returns
+
+
+```{r cumulative_returns, dpi=576, warning=FALSE}
+ggplot(asset_cumulative, aes(x = index, y = returns, linetype = asset))+
+  geom_line(aes(colour = asset), size = 1)+
+  theme_classic()+
+  scale_color_manual(values = rep(c("#85a77f", "#eb6b54", "#4d457e", "#F4B400", "#4285F4", "#FF00BF")))+
+  scale_x_date(expand = c(0,0), date_breaks = "2 years", date_labels =  "%d-%y")+
+  labs(x = "", y = "")+
+  #+
+#  scale_linetype_manual(values = c("ABG" = "solid", "AGL" = "dashed", "GRT" = "solid",
+#                                    "MRP" = "solid", "NPN" = "dashed"))+
+  theme(legend.title = element_blank(),
+        legend.key = element_blank(), legend.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.margin=margin(c(-25,-25,-5,-5)),
+        plot.margin = unit(c(0.2,0.2,0.2,-0.3), "cm"))
+```
+
+Very nice. However, with a graph like this, perhaps it would be better if we had an interactive chart so that we can compare returns at any given point. That requires going back to the xts world. Fortunately, calculating cumulative returns in the world of xts is just as easy.
+
+```{r cumulative_returns_xts}
+c.xts <- cumprod(1 + asset_returns)
+```
+
+Creating the graph is simply a matter of reusing the previous code and just changing the source of the data.
+
+```{r hcharts}
+highchart(type = "stock") %>%
+  hc_title(text = "Cumulative Returns") %>%
+  hc_add_series(c.xts[, symbols[1]], name = symbols[1]) %>%
+  hc_add_series(c.xts[, symbols[2]], name = symbols[2]) %>%
+  hc_add_series(c.xts[, symbols[3]], name = symbols[3]) %>%
+  hc_add_series(c.xts[, symbols[4]], name = symbols[4]) %>%
+  hc_add_series(c.xts[, symbols[5]], name = symbols[5]) %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_navigator(enabled = FALSE) %>%
+  hc_scrollbar(enabled = FALSE) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_legend(enabled = TRUE)
+```
+
+And voila. Look at that! So much nicer! Now with this graph, you can see how much you would have gained from each share at any point in time. Check out how well Mr Price was doing up until 2015, amazing! In 2015, it did as well as Naspers has to July 2020!
+
+It is even possible to change the portfolio start date, such that you can see the cumulative returns from any point in the sample period to any point in the sample period. However, that would require a reactive context (such as Shiny) or porting the code to Javascript. Both options are an unnecessary expense for the purposes of this document.

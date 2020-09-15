@@ -1,0 +1,27 @@
+---
+title: "Financial Analysis in R"
+author: "Tatenda Christian Rusere"
+date: "`r format(Sys.Date(), '%d %b %Y')`"
+output: html_document
+---
+
+# Purpose of the document
+
+This document has two practical motivations and one philosophic motivation. The
+two practical motivations are: (1) to introduce R to finance honours students who wish to move beyond
+Excel for their quantitative work and (2) to show finance honours students a guideline to what their R project should be structured like. 
+
+The driving force behind this book is clean, neat, readable, reusable and reproducible R code for finance. We will prioritize code that is understandable over code that is theoretically brilliant.
+
+# Structure of the document
+
+This book is organized into 4 sections: Installing R, Importing Data into R, Calculating and graphing returns, and empirical tests. 
+
+More generally, this book is structured around building a portfolio and then
+analyzing that portfolio, or what I think of as telling the story of that portfolio
+with data. We will use that portfolio as the vehicle for exploring R and that
+is quite purposeful. I often hear the question asked, “I want to learn R, what
+steps should I take?”. And if that question is posed to me, I like to ask, “What
+problem are you trying to solve?”. The best way to start learning R or deepen
+your knowledge of R is to have a specific project or problem that you need to solve. 
+Thus, the book is structured as the project of analysing our custom portfolio.

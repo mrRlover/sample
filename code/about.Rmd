@@ -1,0 +1,88 @@
+---
+  title: "Concluding Remarks"
+---
+
+The primary purpose of this project has been to give a rough guideline as to what a research project should look like. This does not mean that everything in this document will apply to your research project. Depending on what your topic is, you might use all the code in this document or virtually none! Most wil likely be in the middle as this document covers most of the core packages, data imports and return calculations that you'll likely be doing in your research. 
+
+Should you need assistance beyond what is contained in this document, feel free to contact me on:
+
+
+```{r contacts, echo=FALSE}
+library(htmltools)
+
+HTML(
+  paste(
+    strong('Note'),
+             p('This web application is developed with',
+               a("R Studio", href="http://www.rstudio.com/", target="_blank"),
+               ''),
+             
+             br(),
+             
+             strong('List of packages used:'), br(),
+             
+             p(class="libs",          
+              code('library(highcharter)'),br(),
+              code('library(knitr)'),br(),
+              code('library(lubridate)'),br(),
+              code('library(htmltools)'),br(),
+              code('library(PerformanceAnalytics)'),br(),
+              code('library(quantmod)'),br(),
+              code('library(readxl)'),br(),
+              code('library(tibbletime)'),br(),
+              code('library(tidyquant)'),br(),
+              code('library(beeswarm)'),br(),
+              code('library(tidyverse)'),br(),
+              code('library(timetk)'),br()
+             ),
+
+             br(),
+             br(),
+             
+             strong('Code'),
+             p('Source code for this application is - partly - based on:',br(),
+               a('Reproducible Finance with R.', href='http://www.reproduciblefinance.com/', target="_blank"),br(),
+              a('Data Management: Identify, describe, plot, and remove the outliers from the dataset.', href='https://datascienceplus.com/identify-describe-plot-and-removing-the-outliers-from-the-dataset/', target="_blank"),br(),
+            a('Saurfang at GitHub implementation of corrplot', href='https://github.com/saurfang/shinyCorrplot', target="_blank"),br(),
+            a('Atsushi Mizumoto, Ph.D. correlation webapp with shiny', href='http://langtest.jp/shiny/cor/', target="_blank"),br(),
+            a('All instructions and fora on Shiny', href='https://shiny.rstudio.com/', target="_blank"),br(),
+            a('All fora and smart guys on Stackoverflow', href='https://stackoverflow.com/', target="_blank")),
+            br(),
+
+            p('The code for this web application is available at',
+             a('GitHub.', href='https://github.com/mrRlover/sample', target="_blank")),
+
+             br(),
+             
+             strong('Recommended'),
+             p('To learn more about R, I suggest this book (free pdf),',
+               a("R for Dummies,", href="http://www.ievbras.ru/ecostat/Kiril/R/Biblio/R_eng/R%20dummies.pdf", target="_blank"),
+               'written by Andrie de Vries and Joris Meys.'),
+             
+             p('Also, if you are a cool Mac user and want to use R with GUI,',
+               a("MacR", href="http://www.urano-ken.com/blog/2013/02/25/installing-and-using-macr/", target="_blank"),
+               'is defenitely the way to go!'),
+             
+             br(),
+             
+             strong('Author'),
+             p(a("Tatenda Christian Rusere",
+                 href="", target="_blank"), br(),
+               'Finance Masters student',br(),
+               'School of Economics and Finance',br(),
+               'University of the Witwatersrand', br(),
+               'Johannesburg, South Africa'),
+             
+             br(),
+             
+             strong('Need for more fancy statistics?'),
+             p("Mail to",a("tatendachristianrusere@gmail.com", href="mailto:tatendachristianrusere@gmail.com", target="_blank")),
+             br(),
+    
+             p("Whatsapp:", "+27 61 764 4758"),
+             
+             p(br())
+             
+    )
+)
+```

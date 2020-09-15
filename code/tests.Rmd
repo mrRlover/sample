@@ -1,0 +1,128 @@
+---
+  title: "Empirical Tests"
+---
+
+
+```{r run_previous, echo = FALSE, message=FALSE, results='hide', warning=FALSE}
+pkgs <- c("tidyverse", "lubridate", "readxl", "highcharter", "knitr", "tidyquant", "timetk", "tibbletime", "quantmod", "PerformanceAnalytics", "scales")
+
+sapply(pkgs, function(pkg) if(!require(pkg, character.only = TRUE)) install.packages(pkg, repos = "https://cloud.r-project.org/"))
+
+sapply(pkgs, library, character.only = TRUE)
+
+filenames <- list.files(pattern = "*.csv")
+
+prices <- filenames %>%
+  map(~read_csv(.,
+                col_types =
+                  cols(Date =
+                         col_date(format = "%Y/%m/%d")),
+                na = c("", "#N/A", "NA"))) %>%
+  bind_cols() %>%
+  rename(date = `Date...1`) %>%
+  select(date, everything(),-contains("...")) %>%
+  tk_xts(date_var = date)
+
+symbols <- substr(filenames, 1, 3)
+
+prices_monthly <- to.monthly(prices, indexAt = "lastof", OHLC = FALSE)
+
+asset_returns <- Return.calculate(prices_monthly, method = "log") %>% na.omit()
+
+asset_returns_long <- asset_returns %>%
+  tk_tbl() %>%
+  gather(asset, returns, -index) %>% 
+  group_by(asset)
+
+w <- c(0.25, .25, 0.20, .20, .10)
+
+portfolio_returns <- 
+  Return.portfolio(asset_returns,
+                   weights = w,
+                   rebalance_on = "months") %>%
+  `colnames<-`("returns")
+
+portfolio_returns_dplyr <- asset_returns_long %>%
+  group_by(asset) %>%
+  mutate(weights = case_when(asset == symbols[1] ~ w[1],
+                             asset == symbols[2] ~ w[2],
+                             asset == symbols[3] ~ w[3],
+                             asset == symbols[4] ~ w[4],
+                             asset == symbols[5] ~ w[5]),
+         weighted_returns = returns * weights) %>%
+  group_by(index) %>%
+  summarise(returns = sum(weighted_returns))
+
+portfolio_returns_tq_rebalanced_monthly <-
+  asset_returns_long %>%
+  tq_portfolio(assets_col = asset,
+               returns_col = returns,
+               weights = w,
+               col_rename = "returns",
+               rebalance_on = "months")
+
+portfolio_returns_dplyr %>%
+  rename(tidyverse = returns) %>%
+  mutate(tq = portfolio_returns_tq_rebalanced_monthly$returns,
+         xts =coredata(portfolio_returns)) %>%
+  mutate_if(is.numeric, list(~round(., 3))) %>%
+  head(6)
+
+jse <- read_csv("data/jse.csv", col_types = cols(Date = col_date(format = "%Y/%m/%d")))
+jse <- tk_xts(jse)
+jse <- to.monthly(jse,  indexAt = "last", OHLC = FALSE)
+jse <- Return.calculate(jse) %>% na.omit()
+
+rfr <- read_csv("data/rfr.csv", col_types = cols(Date = col_date(format = "%Y/%m/%d")))
+rfr <- tk_xts(rfr)
+rfr <- to.monthly(rfr, indexAt = "last", OHLC = FALSE)[-1] / 1200
+```
+
+## CAPM Betas
+
+Let us find the betas of each stock and the beta of our portfolio. 
+
+```{r individual_betas, results='hide'}
+betas <- lm(sweep(asset_returns, 1, rfr) ~ jse - rfr)
+betas$coefficients
+```
+
+
+
+```{r print_betas, echo=FALSE}
+betaTable <- kable(betas$coefficients, format = "html")
+betaTable <- gsub("<table>", "<table class = 'kable'>", betaTable)
+betaTable
+remove(betaTable)
+```
+
+Naspers and Anglo American are more risky than the market, while Absa, Growthpoint and Mr Price are less risky than the market. The beta for GRT is remarkably low!
+
+Now let us calculate out portfolio beta.
+
+```{r portfolio_beta, results='hide'}
+port_beta <- lm(coredata(portfolio_returns) - coredata(rfr) ~ coredata(jse) - coredata(rfr))
+port_beta$coefficients
+```
+
+
+
+```{r print_beta, echo=FALSE}
+betaTable <- kable(port_beta$coefficients, format = "html")
+betaTable <- gsub("<table>", "<table class = 'kable'>", betaTable)
+betaTable
+remove(betaTable)
+```
+
+Our portfolio beta is less than the market. I suppose then that in this case, it makes sense that our portfolio performs worse than the market. Actually, while we are on the subject, let us test that shall we?
+
+## Significance of returns
+
+Easiest way to do this is to test if the difference in the means is statistically different from zero.
+
+```{r mean_diff, comment=NULL, warning=FALSE}
+t.test(portfolio_returns,jse,alternative="two.sided",
+       conf.level=0.95)
+```
+
+The p-value is greater than 0.1, therefore the difference in the means is not statistically different from zero. Still, this means that our portfolio does not provide returns greater than the market.

@@ -1,0 +1,107 @@
+---
+title: "Packages"
+---
+
+# Packages
+  
+R the programming language consists of base R and the packages that have been built on top of it. 
+Once you have downloaded base R onto your computer and installed RStudio, you need to install the packages in order to extend the functionality of base R.
+
+To install a package on your computer, run install.packages("name of package").
+
+To use that package, place library(name of package) at the top of your R script or RMarkdown file and run it.
+
+Here are the commands to get the packages for this document:
+  
+```{r pkgs_list, eval=FALSE}
+# tidyverse contains the packages tidyr, ggplot2, dplyr,
+# readr, purrr and tibble
+install.packages("tidyverse")
+install.packages("lubridate")
+install.packages("readxl")
+install.packages("highcharter")
+install.packages("tidyquant")
+install.packages("timetk")
+install.packages("tibbletime")
+install.packages("quantmod")
+install.packages("PerformanceAnalytics")
+install.packages("scales")
+
+library(tidyverse)
+library(lubridate)
+library(readxl)
+library(highcharter)
+library(tidyquant)
+library(timetk)
+library(tibbletime)
+library(quantmod)
+library(PerformanceAnalytics)
+library(scales)
+library(knitr)
+```
+
+
+
+```{r packages, echo=FALSE, message=FALSE, results='hide', warning=FALSE}
+pkgs <- c("tidyverse", "lubridate", "readxl", "highcharter", "knitr", "tidyquant", "timetk", "tibbletime", "quantmod", "PerformanceAnalytics", "scales")
+
+sapply(pkgs, function(pkg) if(!require(pkg, character.only = TRUE)) install.packages(pkg, repos = "https://cloud.r-project.org/"))
+
+sapply(pkgs, library, character.only = TRUE)
+```
+
+## Core packages
+
+### xts
+
+The most important one is `xts`, which is both a package and a type of object. `xts` stands for extensible time series. Most of the work in honours R projects  will be with time series, and indeed most financial work involves time series. 
+
+An xts object is a matrix, that also, always, has a time index for the order of the data. It holds a time series, meaning it holds the observations and the times at which they occurred. An interesting feature of an xts object is that it holds dates in an index column. In fact that index column is considered column number zero, meaning it is not really a column at all. If we have an
+object called financial_data and wanted to access the dates, we would use index(financial_data).
+
+Why is the date index not given its own column? Because it is impossible to have an xts object but not have a date index. If the date index were its own column, that would imply that it could be deleted or removed.
+
+In the xts world, there are two crucial packages that we will use: `quantmod` and `PerformanceAnalytics`. `quantmod` can be used to access the internet and pull in pricing data. That data will arrive to us formatted as an xts object. `PerformanceAnalytics`, as the name implies, has several useful functions for analyzing portfolio performance in an xts object, such as `StdDev()`, `SharpeRatio()`, `SortinoRatio()`, `CAPM.Beta()`. We will make use of this package in this document.
+
+### Tidyverse
+
+The tidyverse is a collection of R packages for doing data science in a certain way. It is not specific to financial services and is not purpose built for time series analysis.
+
+Within the tidyverse, we will make heavy use of the dplyr package for data wrangling, transformation and organizing. dplyr does not have built-in functions for our statistical calculations, but it does allow us to write our own functions or apply some other package's functions to our data.
+
+In this world, our data will be in a data frame, also called a tibble. Throughout this document, I will use those two interchangeably: data frame = tibble in this document.
+
+Why is it called the tidy verse? Because it expects and wants data to be tidy, which means:
+  
+(1) each variable has its own column
+(2) each observation is a row
+(3) each value is a cell
+
+We will explore how to make data tidy versus non-tidy throughout the book.
+
+### Tidyquant
+
+The third core package is tidyquant, which includes the tidyquant, timetk and tibbletime packages. This universe takes a lot of the best features of xts, PerformanceAnalytics and the tidyverse and lets them play well together. For example, tidyquant allows us to apply a function from
+PerformanceAnalytics to a tidy data frame, without having to convert it to an xts object.
+
+### Highcharter
+
+Highcharts is a brilliant javascript charting library, which is used to create interactive charts in html webpages. `highcharter` is an R package but Highcharts is a JavaScript library - the R package is a hook into the JavaScript library. Highcharts is fantastic for visualizing time series and it comes with great built-in widgets for viewing different time frames. 
+
+### ggplot2
+
+`ggplot2` is package for data visualisation in R. This package is included with the tidyverse. Typically only works with dataframes and works best with tidy dataframes. Since most of the work in this document is with `xts` objects, we will use this only when we have a tidy dataframe that requires data visualisation.
+
+# Data
+
+Once packages have been loaded, next step is to sort out the data. This typically follows the following steps:
+  
+  1) Import daily prices from the internet, a csv file or xls file
+2) Transform daily prices to monthly prices
+3) Transform monthly prices to monthly returns
+4) Visualize monthly returns
+5) Calculate portfolio monthly returns based on asset monthly returns
+and weights
+6) Visualize portfolio returns
+
+To map a data science work flow onto this section, those steps encompass data import, cleaning, wrangling, transformation and initial visualization to make sure the wrangling has gone how we wish. This is typically the longest part of the project. Furthermore, if the structure of the data is complex, untidy or unorganised, this can also be the hardest part of the R project, before any analysis is even done.

@@ -1,0 +1,162 @@
+---
+title: "From Prices to Returns"
+---
+
+```{r run_previous, echo = FALSE, message=FALSE, results='hide', warning=FALSE}
+pkgs <- c("tidyverse", "lubridate", "readxl", "highcharter", "knitr", "tidyquant", "timetk", "tibbletime", "quantmod", "PerformanceAnalytics", "scales")
+
+sapply(pkgs, function(pkg) if(!require(pkg, character.only = TRUE)) install.packages(pkg, repos = "https://cloud.r-project.org/"))
+
+sapply(pkgs, library, character.only = TRUE)
+
+filenames <- list.files(pattern = "*.csv")
+
+prices <- filenames %>%
+  map(~read_csv(.,
+                col_types =
+                  cols(Date =
+                         col_date(format = "%Y/%m/%d")),
+                na = c("", "#N/A", "NA"))) %>%
+  bind_cols() %>%
+  rename(date = `Date...1`) %>%
+  select(date, everything(),-contains("...")) %>%
+  tk_xts(date_var = date)
+
+symbols <- substr(filenames, 1, 3)
+```
+
+## Returns
+
+Next we will convert daily prices to monthly log returns.
+
+I mentioned in the introduction that we would be working with three core packages - xts, tidyverse and tidyquant - the prices object is an xts, so we will use that here.
+
+The first observation in our prices object is January 04, 2000 (the first trading day of that year) and we have daily prices. We want to convert to those daily prices to monthly log returns based on the last reading of each month.
+
+We will use `to.monthly(prices, indexAt = "last", OHLC = FALSE)` from the `quantmod` package. The argument indexAt = "lastof" tells the function whether we want to index to the first day of the month or the last day. If we wanted to use the first day, we would change it to indexAt = "firstof".
+
+```{r monthly_prices, results='hide'}
+prices_monthly <- to.monthly(prices, indexAt = "lastof", OHLC = FALSE)
+head(prices_monthly)
+```
+
+
+
+
+```{r prices_monthly, echo=FALSE}
+priceTable <- data.frame(head(prices_monthly))
+# colnames(priceTable)[1] <- ""
+priceTable <- kable(priceTable, format = "html")
+priceTable <- gsub("<table>", "<table class = kable>", priceTable)
+priceTable
+remove(priceTable)
+```
+
+We have moved from an xts object of daily prices to an xts object of monthly prices. Note that we now have one reading per month, for the last day of each month.
+
+Now we call Return.calculate(prices_monthly, method = "log") to convert to returns and save as an object called asset_returns. Note this`will give us log returns by the method = "log" argument. We could have used method = "discrete" to get simple returns.
+
+```{r returns, results='hide'}
+asset_returns <- Return.calculate(prices_monthly, method = "log") %>% na.omit()
+head(asset_returns)
+```
+
+
+
+```{r returns_table, echo=FALSE}
+returnsTable <- data.frame(head(asset_returns))
+returnsTable <- kable(returnsTable, format = "html")
+returnsTable <- gsub("<table>", "<table kable>", returnsTable)
+returnsTable
+remove(returnsTable)
+```
+
+Do we notice anything of interest?
+
+First, look at the date in each object. asset_returns has a date index, not a column. That index does not have a name. It is accessed via `index(asset_returns)`.
+
+A tibble would have a column called “date”, accessed via the `$date` convention, e.g. `asset_returns_tbl$date`. That distinction is not important when we read with our eyes, but it is very important when we pass these objects to functions.
+
+Second, each of these objects is in “wide” format, which in this case means there is a column for each of our assets: ABG has a column, AGL has a column, GRT has a column, MRP has a column, NPN has a column.
+
+This is the format that xts likes and this format is easier for a human to read. However, the tidyverse calls for this data to be in long or tidy format where each variable has its own column. For asset returns to be tidy, we need a column called “date”, a column called “asset” and a column called “returns”.
+
+```{r long_returns, results='hide'}
+asset_returns_long <- asset_returns %>%
+  tk_tbl() %>%
+  gather(asset, returns, -index) %>% 
+  group_by(asset)
+
+rbind(head(asset_returns_long, 3), tail(asset_returns_long, 3))
+```
+
+
+
+```{r returns_long, echo=FALSE}
+returnsTable <- data.frame(head(asset_returns_long, 3), tail(asset_returns_long, 3))
+returnsTable <- kable(returnsTable, format = "html")
+returnsTable <- gsub("<table>", "<table kable>", returnsTable)
+returnsTable
+remove(returnsTable)
+```
+
+#  Visualizing Asset Returns in the xts world
+
+It might seem odd that visualization is part of the data import and wrangling work flow and it does not have to be: we could jump straight into the process of converting these assets into a portfolio. However, it is a good practice to chart individual returns because once a portfolio is built, we are unlikely to  back track to visualizing on an individual basis. Yet, those individual returns are the building blocks and raw material of our portfolio and visualizing them is a great way to understand them deeply. It also presents an opportunity to look for outliers, or errors, or anything unusual to be corrected before we move too far along in our analysis.
+
+For the purposes of visualizing returns, we will work with two of our monthly
+log returns objects, asset_returns and asset_returns_long (the tidy,
+long-formatted tibble).
+
+We start with the highcharter package to visualize the xts formatted returns.
+highcharter is an R package but Highcharts is a JavaScript library. The R package is a hook into the JavaScript library. Highcharts is fantastic for visualizing time series and it comes with great built-in widgets for viewing different time frames, plus we get to use the power of JavaScript without leaving the world of R code.
+
+Not only are the visualizations nice, but highcharter “just works” with xts objects in the sense that it reads the index as dates without needing to be told. We pass in an xts object and let the package do the rest. 
+
+Let’s see how it works for charting our asset monthly returns. First, we set highchart(type = "stock") to get a nice line format that was purpose-built for stocks.
+
+Then we add each of our series to the highcharter code flow with hc_add_series(asset_returns[, symbols[1]], name = symbol[1]). Notice that we can use our original symbols object to
+reference the columns. This will allow the code to run should we change to different ticker symbols at the outset.
+
+```{r chart_returns}
+highchart(type = "stock") %>%
+  hc_title(text = "Monthly Log Returns") %>%
+  hc_add_series(asset_returns[, symbols[1]], name = symbols[1]) %>%
+  hc_add_series(asset_returns[, symbols[2]], name = symbols[2]) %>%
+  hc_add_series(asset_returns[, symbols[3]], name = symbols[3]) %>%
+  hc_add_series(asset_returns[, symbols[4]], name = symbols[4]) %>%
+  hc_add_series(asset_returns[, symbols[5]], name = symbols[5]) %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_navigator(enabled = FALSE) %>%
+  hc_scrollbar(enabled = FALSE) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_legend(enabled = TRUE)
+```
+
+```{r hist}
+hc_hist <- hist(asset_returns[, symbols[1]], breaks = 50, plot = FALSE)
+```
+
+
+
+```{r chart_hist}
+hchart(hc_hist, color = "cornflowerblue") %>%
+  hc_title(text = paste(symbols[1], "Log Returns Distribution", sep = " ")) %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_legend(enabled = FALSE)
+```
+
+
+
+```{r}
+hc_hist_fun <- function(n = 1, object, color){ 
+  hc_hist <- hist(object[, symbols[n]], breaks = 50,
+                  plot = FALSE)
+  hchart(hc_hist, color = color) %>%
+    hc_title(text = paste(symbols[n],"Log Returns Distribution", sep = " ")) %>%
+    hc_add_theme(hc_theme_flat()) %>%
+    hc_exporting(enabled = TRUE) %>%
+    hc_legend(enabled = FALSE)
+}
+```

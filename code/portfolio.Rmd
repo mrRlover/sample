@@ -1,0 +1,333 @@
+---
+  title: "Building a Portfolio"
+---
+  
+```{r run_previous, echo = FALSE, message=FALSE, results='hide', warning=FALSE}
+pkgs <- c("tidyverse", "lubridate", "readxl", "highcharter", "knitr", "tidyquant", "timetk", "tibbletime", "quantmod", "PerformanceAnalytics", "scales")
+
+sapply(pkgs, function(pkg) if(!require(pkg, character.only = TRUE)) install.packages(pkg, repos = "https://cloud.r-project.org/"))
+
+sapply(pkgs, library, character.only = TRUE)
+
+filenames <- list.files(pattern = "*.csv")
+
+prices <- filenames %>%
+  map(~read_csv(.,
+                col_types =
+                  cols(Date =
+                         col_date(format = "%Y/%m/%d")),
+                na = c("", "#N/A", "NA"))) %>%
+  bind_cols() %>%
+  rename(date = `Date...1`) %>%
+  select(date, everything(),-contains("...")) %>%
+  tk_xts(date_var = date)
+
+symbols <- substr(filenames, 1, 3)
+
+prices_monthly <- to.monthly(prices, indexAt = "lastof", OHLC = FALSE)
+
+asset_returns <- Return.calculate(prices_monthly, method = "log") %>% na.omit()
+
+asset_returns_long <- asset_returns %>%
+  tk_tbl() %>%
+  gather(asset, returns, -index) %>% 
+  group_by(asset)
+```
+
+We spent a lot of time on the individual assets to make sure we had a good
+grasp of our data building blocks.
+
+Next, we collect individual returns into a portfolio, which is a weighted set of
+asset returns. Accordingly, the first thing we need to do is assign a weight to
+each asset. Our portfolio will have the following constituents:
+
++ ABG (Absa Group - Financials) weighted 25%
++ AGL (Anglo American Platinum - Resources) weighted 25%
++ GRT (Growthpoint - Property) weighted 20%
++ MRP (Mr Price - Retail) weighted 20%
++ NPN (Naspers - Media) weighted 10%
+
+We need to create a weights vector that aligns with those allocations.
+
+```{r portfolio_weights}
+w <- c(0.25, .25, 0.20, .20, .10)
+```
+
+Before we use the weights in our calculations, have a quick sanity check in the
+next code chunk to make sure the weights and assets align.
+
+```{r sanity_check, results='hide'}
+tibble(w, symbols)
+```
+
+
+
+```{r weights_table, echo=FALSE}
+weights <- read.delim(text = 
+"w symbols
+<dbl> <chr>
+0.250 SPY
+0.250 EFA
+0.200 IJS
+0.200 EEM
+0.100 AGG", sep = " ")
+
+weights <- kable(weights, format = "html")
+weights <- gsub("<table>", "<table class = kable id = 'weightsTable'>", weights)
+weights
+remove(weights)
+```
+
+Finally, make sure the weights sum to 100%. We can eyeball this with 5 assets,but with 50 assets it would be better to run the sanity check to catch any
+errors as soon as possible
+
+```{r unity}
+tibble(w, symbols) %>% 
+  summarise(total_weight = sum(w))
+```
+
+## Portfolio Returns in the xts world
+
+We will use Return.portfolio() from PerformanceAnalytics, to calculate portfolio returns. The function requires two arguments for a portfolio, an xts object of returns and a vector
+of weights. It is not necessary but we are also going to set rebalance_on =
+"months" so we can confirm it matches our by-hand calculations above.
+Remember, in the by-hand calculation, we set the portfolio weights as fixed,
+meaning they never changed on a month-to-month basis. That is equivalent to
+rebalancing every month. In practice, that would be quite rare. If we want a
+more realistic scenario, we could choose annual rebalancing by changing the
+argument to rebalance_on = "years".
+
+```{r portfolio_returns, results=FALSE, message=FALSE, warning=FALSE}
+portfolio_returns <- 
+  Return.portfolio(asset_returns,
+                   weights = w,
+                   rebalance_on = "months") %>%
+  `colnames<-`("returns")
+
+head(portfolio_returns)
+```
+
+
+
+```{r porfolio_returns_table}
+returns <- data.frame(portfolio_returns[1:5,])
+colnames(returns)[1] <- ""
+returns <- kable(returns, format = "html")
+returns <- gsub("<table>", "<table class = kable>", returns)
+returns
+remove(returns)
+```
+
+## Portfolio Returns in the tidyverse
+
+We begin our tidyverse work with our tidy data frame asset_returns_long.
+Our first task is to add a weights column to the tibble using the mutate()
+function. Each asset should be weighted according to the w vector. We use
+case_when() to assign weights by asset, so that in the case when the asset
+column is equal to asset 1 (ABG), we assign a weight of 0.25, or w[1], and so
+on.
+
+```{r asset_returns, results='hide'}
+asset_returns_long %>%
+  group_by(asset) %>%
+  mutate(weights = case_when(asset == symbols[1] ~ w[1],
+                             asset == symbols[2] ~ w[2],
+                             asset == symbols[3] ~ w[3],
+                             asset == symbols[4] ~ w[4],
+                             asset == symbols[5] ~ w[5])) %>%
+  head(6)
+```
+
+
+
+```{r tibble_table, echo=FALSE}
+tibble_table <- read.delim(text = ',,,
+# A tibble: 6 x 4,,,
+# Groups:   asset [1],,,
+  index,      asset,  returns, weights
+  <date>,    <chr>,    <dbl>,   <dbl>
+1 2000-02-29, ABG,   -0.0594,     0.25
+2 2000-03-31, ABG,   -0.0248,     0.25
+3 2000-04-30, ABG,    0.00418,    0.25
+4 2000-05-31, ABG,    0.0606,     0.25
+5 2000-06-30, ABG,    0.00781,    0.25
+6 2000-07-31, ABG,   -0.0196,     0.25', sep = ",")
+
+tibble_table <- kable(tibble_table, format = "html", col.names = NULL)
+tibble_table <- gsub("<table>", "<table class = 'tibble', id = 'portTable'>", tibble_table)
+tibble_table
+remove(tibble_table)
+```
+
+Next, we need to implement the equation for portfolio returns. This task
+is a bit tricky but serves as a nice way to use the group_by() function
+with dates. We first add a new locum called weighted_returns that is the
+product of each asset’s monthly return and its weight. Then, we group_by()
+the date column because each of our weighted returns needs to be added
+together for each date. Once we group by date, we can use summarise(total
+= sum(weighted_returns)) to add up the monthly weighted returns.
+
+```{r portfolio_returns_dplyr, results='hide'}
+portfolio_returns_dplyr <- asset_returns_long %>%
+  group_by(asset) %>%
+  mutate(weights = case_when(asset == symbols[1] ~ w[1],
+                             asset == symbols[2] ~ w[2],
+                             asset == symbols[3] ~ w[3],
+                             asset == symbols[4] ~ w[4],
+                             asset == symbols[5] ~ w[5]),
+         weighted_returns = returns * weights) %>%
+  group_by(index) %>%
+  summarise(returns = sum(weighted_returns))
+
+head(portfolio_returns_dplyr, 6)
+```
+
+
+
+```{r port_Table_dplyr, echo=FALSE}
+tibble_table <- read.delim(text = ',
+,
+# A tibble: 6 x 2,
+  index,       returns
+  <date>,        <dbl>
+  2000-02-29, -0.0716 
+  2000-03-31, -0.0232 
+  2000-04-30, -0.0755 
+  2000-05-31,  0.0528 
+  2000-06-30,  0.00933
+  2000-07-31,  0.00270', sep = ",")
+
+tibble_table <- kable(tibble_table, format = "html", col.names = NULL)
+tibble_table <- gsub("<table>", "<table class = 'tibble'>", tibble_table)
+tibble_table
+remove(tibble_table)
+```
+
+That piped workflow required some logical hoops but it useful to see how to
+add those weights and then group by the date for finding total returns. Think
+about how we would solve the puzzle of rebalancing weights not every month,
+but every year.
+
+## Portfolio Returns in the tidyquant world
+
+In tidyquant, we start again with our long, tidy-formatted
+asset_returns_long object, but convert to portfolio returns using
+tq_portfolio().
+
+The tq_portfolio function takes a tibble and then asks for an assets column
+to group by, a returns column to find return data, and a weights vector.
+It’s a wrapper for Return.portfolio() and thus also accepts the argument
+rebalance_on = "months". Since we are rebalancing by months, we should
+again get a portfolio returns object that matches our existing objects.
+
+```{r tq_portfolio, results='hide'}
+portfolio_returns_tq_rebalanced_monthly <-
+  asset_returns_long %>%
+  tq_portfolio(assets_col = asset,
+               returns_col = returns,
+               weights = w,
+               col_rename = "returns",
+               rebalance_on = "months")
+```
+
+Let’s take a quick look and compare how the tidy tibbles of portfolio returns compare to the xts objects of portfolio returns.
+
+```{r compare, results = 'hide'}
+portfolio_returns_dplyr %>%
+  rename(tidyverse = returns) %>%
+  mutate(tq = portfolio_returns_tq_rebalanced_monthly$returns,
+         xts =coredata(portfolio_returns)) %>%
+  mutate_if(is.numeric, list(~round(., 3))) %>%
+  head(6)
+```
+
+
+
+
+```{r port_Table_comp, echo=FALSE}
+tibble_table <- read.delim(text = ',,
+,,
+# A tibble: 6 x 4,,
+  index,      tidyverse,     tq xts[,"returns"]
+  <date>,         <dbl>,  <dbl>,           <dbl>
+  2000-02-29,    -0.072, -0.072,          -0.072
+  2000-03-31,    -0.023, -0.023,          -0.023
+  2000-04-30,    -0.075, -0.075,          -0.075
+  2000-05-31,     0.053,  0.053,           0.053
+  2000-06-30,     0.009,  0.009,           0.009
+  2000-07-31,     0.003,  0.003,           0.003', sep = ",")
+
+tibble_table <- kable(tibble_table, format = "html", col.names = NULL)
+tibble_table <- gsub("<table>", "<table class = 'tibble'>", tibble_table)
+tibble_table
+remove(tibble_table)
+```
+
+We have three objects of portfolio returns, calculated in three different ways, and
+with the same results.
+
+##  Visualizing Portfolio Returns in the xts world
+
+Let us start with highcharter to visualize the xts formatted portfolio returns.
+First, we set highchart(type = "stock") to get a nice
+time series line. Then we add our returns column from
+portfolio_returns. highcharter recognizes the
+date index so we do not need to point to it.
+
+```{r highcharts_port}
+highchart(type = "stock") %>%
+  hc_title(text = "Portfolio Monthly Returns") %>%
+  hc_add_series(portfolio_returns$returns,
+                name = "Rebalanced Monthly",
+                color = "cornflowerblue") %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_navigator(enabled = FALSE) %>%
+  hc_scrollbar(enabled = FALSE) %>%
+  hc_legend(enabled = TRUE) %>%
+  hc_exporting(enabled = TRUE)
+```
+
+The code results in a nice and simple line chart.
+
+Let us see how well this portfolio did over time.
+
+```{r highcharts}
+c.port <- cumprod(1+portfolio_returns)
+
+highchart(type = "stock") %>%
+  hc_title(text = "Portfolio Monthly Returns") %>%
+  hc_add_series(c.port$returns,
+                name = "Rebalanced Monthly",
+                color = "cornflowerblue") %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_navigator(enabled = FALSE) %>%
+  hc_scrollbar(enabled = FALSE) %>%
+  hc_legend(enabled = TRUE) %>%
+  hc_exporting(enabled = TRUE)
+```
+
+Now let us compare that to the jse in the same time frame
+
+```{r echo=FALSE, results='hide', warning=FALSE}
+jse <- read_csv("data/jse.csv", col_types = cols(Date = col_date(format = "%Y/%m/%d")))
+jse <- tk_xts(jse)
+jse <- to.monthly(jse,  indexAt = "last", OHLC = FALSE)
+jse <- Return.calculate(jse) %>% na.omit()
+c.jse <- cumprod(1+jse)
+```
+
+
+
+```{r jse, warning=FALSE}
+highchart(type = "stock") %>%
+  hc_title(text = "Cumulative Returns") %>%
+  hc_add_series(c.port[, 1], name = "portfolio") %>%
+  hc_add_series(c.jse[, 1], name = "JSE") %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_navigator(enabled = FALSE) %>%
+  hc_scrollbar(enabled = FALSE) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_legend(enabled = TRUE)
+```
+
+The JSE outperforms our portfolio, looks like stock picking is hard, even with the benefit of hindsight. To be fair, our weighting scheme also has a lot to do with this. Overweighting Naspers might change this drastically.
